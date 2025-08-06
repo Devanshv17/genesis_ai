@@ -31,17 +31,18 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (await file.exists()) {
       try {
-        print('SplashScreen: Model found. Initializing GemmaService...');
-        // --- THIS IS THE FIX ---
-        // Create the one, shared model instance for the whole app.
-        await GemmaService.initialize();
-        print('SplashScreen: Service initialized. Navigating to HomeScreen.');
+        print('SplashScreen: Model found. Setting up GemmaService path...');
+        // FIX: Call the renamed method from our previous correction.
+        await GemmaService.setupModelPath();
+        print('SplashScreen: Service path configured. Navigating to HomeScreen.');
 
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const HomeScreen()),
         );
       } catch (e) {
-        print('SplashScreen: Model is corrupt, navigating to DownloaderScreen.');
+        // This catch block might now be less likely to trigger,
+        // but it's good for safety.
+        print('SplashScreen: Error during path setup: $e. Navigating to DownloaderScreen.');
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const DownloaderScreen()),
         );
@@ -53,6 +54,7 @@ class _SplashScreenState extends State<SplashScreen> {
       );
     }
   }
+
 
   @override
   Widget build(BuildContext context) {

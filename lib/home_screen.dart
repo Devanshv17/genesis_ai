@@ -1,8 +1,9 @@
 // lib/home_screen.dart
-import 'package:ai_agent/agent.dart';
-import 'package:ai_agent/chat_screen.dart';
-import 'package:ai_agent/hive_service.dart';
-import 'package:ai_agent/icon_service.dart';
+import 'agent.dart';
+import 'chat_message.dart';
+import 'chat_screen.dart';
+import 'hive_service.dart';
+import 'icon_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
@@ -33,22 +34,26 @@ class _HomeScreenState extends State<HomeScreen> {
         ..name = 'Helpful Assistant'
         ..persona = 'You are a helpful and friendly assistant.'
         ..toolNames = []
-        ..iconName = 'chat_bubble');
+        ..iconName = 'chat_bubble'
+        ..history = []); // Initialize history
       agentBox.add(Agent()
         ..name = 'Image Analyst'
         ..persona = 'You are an expert at analyzing and describing images in detail. When the user provides an image, describe what you see with rich detail.'
         ..toolNames = []
-        ..iconName = 'image');
+        ..iconName = 'image'
+        ..history = []); // Initialize history
       agentBox.add(Agent()
         ..name = 'Device Controller'
         ..persona = 'You are a helpful assistant that can control device features. You have access to a tool called `toggle_flashlight` to turn the flashlight on or off.'
         ..toolNames = ['toggle_flashlight']
-        ..iconName = 'lightbulb');
+        ..iconName = 'lightbulb'
+        ..history = []); // Initialize history
       agentBox.add(Agent()
         ..name = 'Live Weather Reporter'
         ..persona = 'You are a function-calling AI assistant. Your ONLY job is to identify and call the correct tool from the provided list. You have the following tools available: `get_current_weather`. When a user asks "what is the weather in Paris?", you MUST respond ONLY with the function call. Example of a correct response format: `get_current_weather(location="Paris")`. You MUST NOT add any prefixes like `print()` or `weather.`. You MUST NOT use markdown `tool_code` blocks. Your entire response must be the raw function call.'
         ..toolNames = ['get_current_weather']
-        ..iconName = 'cloud');
+        ..iconName = 'cloud'
+        ..history = []); // Initialize history
     }
   }
 
@@ -66,7 +71,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     try {
-      final model = GenerativeModel(model: 'gemini-1.5-pro-latest', apiKey: apiKey);
+      final model = GenerativeModel(model: 'gemini-1.5-pro', apiKey: apiKey);
 
       final metaPrompt =
           'You are an AI Agent Persona generator. The user will provide a brief description of an agent. Your task is to generate a detailed system prompt for that agent. The system prompt should be a concise paragraph that instructs another AI on how to behave, written in the second person ("You are..."). Do not add any extra text, headings, or quotation marks. Just the persona. Here is the user\'s description: "$userPrompt"';
@@ -95,7 +100,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ..name = userPrompt
           ..persona = newPersona
           ..toolNames = []
-          ..iconName = chosenIconName;
+          ..iconName = chosenIconName
+          ..history = []; // Initialize history for new agents
         await HiveService.addAgent(newAgent);
         textController.clear();
       } else {
@@ -141,7 +147,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- NEW FUNCTION TO SHOW THE RESET CONFIRMATION DIALOG ---
   void _showResetConfirmation() {
     showDialog(
       context: context,
@@ -160,8 +165,8 @@ class _HomeScreenState extends State<HomeScreen> {
               style: TextButton.styleFrom(foregroundColor: Colors.red),
               child: const Text('Reset'),
               onPressed: () async {
-                await HiveService.clearAllAgents(); // Clear the database
-                _addDefaultAgentsIfEmpty(); // Re-add the defaults
+                await HiveService.clearAllAgents();
+                _addDefaultAgentsIfEmpty();
                 Navigator.of(context).pop();
               },
             ),
@@ -176,7 +181,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('My AI Agents'),
-        // --- ADDED RESET BUTTON TO APPBAR ---
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),

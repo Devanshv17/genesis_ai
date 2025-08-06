@@ -1,4 +1,6 @@
-import 'package:ai_agent/icon_service.dart';
+// lib/agent.dart
+import 'chat_message.dart'; // Import the ChatMessage model
+import 'icon_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_gemma/flutter_gemma.dart' as gemma;
 import 'package:hive/hive.dart';
@@ -16,9 +18,13 @@ class Agent extends HiveObject {
   @HiveField(2)
   late List<String> toolNames;
 
-  // --- NEW FIELD TO STORE THE ICON NAME ---
   @HiveField(3)
   late String iconName;
+
+  // --- NEW FIELD FOR CHAT HISTORY ---
+  @HiveField(4)
+  late List<ChatMessage> history;
+
 
   // Helper to get the actual Tool objects at runtime
   List<gemma.Tool> get tools {
@@ -38,6 +44,5 @@ class Agent extends HiveObject {
     return toolObjects;
   }
 
-  // --- NEW HELPER TO GET THE ICONDATA OBJECT ---
   IconData get iconData => IconService.getIconByName(iconName);
 }

@@ -1,16 +1,17 @@
+// lib/chat_screen.dart
+
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:typed_data'; // Required for image bytes
-import 'package:flutter_gemma/core/model.dart';
+import 'dart:typed_data';
 
-import 'agent.dart';
-import 'chat_message.dart';
-import 'device_tools.dart';
+import 'package:ai_agent/agent.dart';
+import 'package:ai_agent/chat_message.dart';
+import 'package:ai_agent/device_tools.dart';
+import 'package:ai_agent/gemma_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:image_picker/image_picker.dart'; // Import the image_picker package
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter_gemma/core/model.dart';
+import 'package:image_picker/image_picker.dart';
 
 class ChatScreen extends StatefulWidget {
   final Agent agent;
@@ -21,61 +22,42 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  InferenceModel? _inferenceModel;
-  var _chat;
+  StreamSubscription? _responseSubscription;
   String _status = 'Initializing...';
   bool _isReady = false;
   bool _isModelResponding = false;
-
   final textController = TextEditingController();
   final List<ChatMessage> messages = [];
   final ScrollController _scrollController = ScrollController();
-
-  // State variable to hold the selected image
   Uint8List? _imageBytes;
 
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => initializeGemma());
+    messages.addAll(widget.agent.history);
+    Future.microtask(() => initializeChat());
   }
 
   @override
   void dispose() {
-    _inferenceModel?.close();
+    _responseSubscription?.cancel();
+    GemmaService.stopChatSession();
+    widget.agent.history = messages;
+    widget.agent.save();
     textController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> initializeGemma() async {
-    setState(() => _status = 'Loading ${widget.agent.name}...');
-    try {
-      final directory = await getApplicationDocumentsDirectory();
-      const modelFilename = 'gemma-3n-E2B-it-int4.task';
-      final filePath = '${directory.path}/$modelFilename';
-      await FlutterGemmaPlugin.instance.modelManager.setModelPath(filePath);
-
-      _inferenceModel = await FlutterGemmaPlugin.instance.createModel(
-        modelType: ModelType.gemmaIt,
-        supportImage: true,
-      );
-
-      _chat = await _inferenceModel!.createChat(
-        supportImage: true,
-        tools: widget.agent.tools ?? [],
-      );
-
-      await _chat.addQueryChunk(Message.text(text: widget.agent.persona, isUser: true));
-
-      setState(() {
-        _isReady = true;
-        _status = 'Ready to chat!';
-      });
-    } catch (e) {
-      print('[ERROR] An error occurred during initialization: $e');
-      setState(() => _status = 'Error initializing AI. Please restart.');
-    }
+  Future<void> initializeChat() async {
+    if (!mounted) return;
+    setState(() => _status = 'Preparing AI session...');
+    await GemmaService.startChatSession(widget.agent);
+    if (!mounted) return;
+    setState(() {
+      _isReady = true;
+      _status = 'Ready to chat!';
+    });
   }
 
   void _scrollToBottom() {
@@ -88,170 +70,166 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Function to pick an image from the gallery
   Future<void> _pickImage() async {
     final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70, maxHeight: 1024);
+    final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery, imageQuality: 70, maxHeight: 1024);
     if (pickedFile != null) {
       final bytes = await pickedFile.readAsBytes();
-      setState(() {
-        _imageBytes = bytes;
-      });
+      if (!mounted) return;
+      setState(() => _imageBytes = bytes);
     }
   }
 
-  void sendMessage() async {
-    if (!_isReady || _isModelResponding || (textController.text.isEmpty && _imageBytes == null) || _chat == null) return;
+  Future<void> sendMessage() async {
+    if (!_isReady ||
+        _isModelResponding ||
+        (textController.text.isEmpty && _imageBytes == null)) return;
 
     final userMessageText = textController.text;
+    final userMessage = ChatMessage()
+      ..text = userMessageText
+      ..isUser = true
+      ..imageBytes = _imageBytes;
 
     setState(() {
-      messages.add(ChatMessage(text: userMessageText, isUser: true));
+      messages.add(userMessage);
       textController.clear();
       _isModelResponding = true;
     });
 
     Future.delayed(const Duration(milliseconds: 50), _scrollToBottom);
-    await _generateResponse(userMessageText, _imageBytes);
+    _generateResponse(userMessageText, _imageBytes);
 
-    // Clear the image after sending
-    setState(() {
-      _imageBytes = null;
-    });
+    if (!mounted) return;
+    setState(() => _imageBytes = null);
   }
 
-  Future<void> _generateResponse(String userMessageText, Uint8List? imageBytes) async {
-    // Logic to handle images
-    if (imageBytes != null) {
-      await _chat.addQueryChunk(Message.withImage(
-          text: userMessageText,
-          imageBytes: imageBytes,
-          isUser: true
-      ));
-    } else {
-      await _chat.addQueryChunk(Message.text(text: userMessageText, isUser: true));
+  void _generateResponse(String userMessageText, Uint8List? imageBytes) {
+    final aiMessage = ChatMessage()..text = '…'..isUser = false;
+    if (!mounted) return;
+    setState(() => messages.add(aiMessage));
+
+    final responseStream = GemmaService.generateResponse(userMessageText, imageBytes);
+
+    if (responseStream == null) {
+      setState(() {
+        aiMessage.text = "Error: AI Service not ready.";
+        _isModelResponding = false;
+      });
+      return;
     }
 
-    setState(() => messages.add(ChatMessage(text: '…', isUser: false)));
+    String fullResponse = '';
+    // --- FIX: This variable will hold the function call if we receive one. ---
+    FunctionCallResponse? receivedFunctionCall;
 
-    try {
-      final responseStream = _chat.generateChatResponseAsync();
+    _responseSubscription = responseStream.listen(
+          (tokenResponse) {
+        if (!mounted) return;
 
-      String fullResponse = '';
-      await for (final tokenResponse in responseStream) {
         if (tokenResponse is FunctionCallResponse) {
-          await _handleFunctionCall(tokenResponse);
-          return;
+          // --- FIX: Just save the function call. Don't execute it yet. ---
+          receivedFunctionCall = tokenResponse;
+          // You can still update the UI to show that a tool is being considered.
+          final functionName = tokenResponse.name;
+          final functionArgs = jsonEncode(tokenResponse.args);
+          final formattedCall = 'Calling Tool:\n$functionName($functionArgs)';
+          setState(() => aiMessage.text = formattedCall);
+
         } else if (tokenResponse is TextResponse) {
           fullResponse += tokenResponse.token;
-          setState(() {
-            messages.last = ChatMessage(text: fullResponse + '…', isUser: false);
-          });
+          setState(() => aiMessage.text = fullResponse + '…');
           _scrollToBottom();
         }
-      }
+      },
+      onError: (e) {
+        if (!mounted) return;
+        setState(() {
+          aiMessage.text = 'Sorry, an error occurred.';
+          _isModelResponding = false;
+        });
+      },
+      onDone: () async {
+        if (!mounted) return;
 
-      setState(() {
-        messages.last = ChatMessage(text: fullResponse, isUser: false);
-      });
+        // --- FIX: The stream is done. NOW it's safe to act. ---
+        if (receivedFunctionCall != null) {
+          // A tool needs to be called.
+          _executeToolAndGetFinalResponse(receivedFunctionCall!, aiMessage);
+        } else {
+          // It was a simple text response. Finalize it.
+          setState(() => aiMessage.text = fullResponse);
+          await GemmaService.addModelResponseToHistory(fullResponse);
+          setState(() => _isModelResponding = false);
+          _scrollToBottom();
+        }
+      },
+    );
+  }
 
-      final wasHandledAsFunction = await _parseAndHandleTextFunctionCall(fullResponse);
+  Future<void> _executeToolAndGetFinalResponse(FunctionCallResponse call, ChatMessage messageToUpdate) async {
+    // This method is now called at a safe time. Its internal logic remains the same.
+    final modelJsonOutput = {
+      'name': call.name,
+      'parameters': call.args,
+    };
+    await GemmaService.addModelResponseToHistory(jsonEncode(modelJsonOutput));
 
-      if (!wasHandledAsFunction) {
-        setState(() => _isModelResponding = false);
-      }
+    await Future.delayed(const Duration(milliseconds: 1200));
+    if (!mounted) return;
 
-    } catch (e) {
-      print('[getResponse] CAUGHT ERROR: $e');
-      setState(() {
-        messages.last = ChatMessage(text: 'Sorry, an error occurred.', isUser: false);
-        _isModelResponding = false;
-      });
-    }
+    setState(() => messageToUpdate.text = 'Running `${call.name}`... ⚙️');
     _scrollToBottom();
-  }
 
-  Future<bool> _parseAndHandleTextFunctionCall(String text) async {
-    final regex = RegExp(r'(\w+)\((.*)\)');
-    final match = regex.firstMatch(text.trim());
-
-    if (match != null) {
-      final functionName = match.group(1);
-      final argsString = match.group(2);
-
-      if (functionName == null || argsString == null) return false;
-
-      Map<String, dynamic> args = {};
-      final argRegex = RegExp(r'(\w+)\s*=\s*"([^"]*)"');
-      final argMatches = argRegex.allMatches(argsString);
-      for (final argMatch in argMatches) {
-        args[argMatch.group(1)!] = argMatch.group(2)!;
-      }
-
-      print('--- PARSED FUNCTION CALL FROM TEXT ---');
-      print('Name: $functionName');
-      print('Arguments: $args');
-      print('------------------------------------');
-
-      final functionCall = FunctionCallResponse(name: functionName, args: args);
-      await _handleFunctionCall(functionCall);
-      return true;
-    }
-    return false;
-  }
-
-  Future<void> _handleFunctionCall(FunctionCallResponse functionCall) async {
-    setState(() => messages.last = ChatMessage(text: 'Activating tool: ${functionCall.name}...', isUser: false));
-    Map<String, dynamic> toolResponse;
-
-    switch (functionCall.name) {
-      case 'toggle_flashlight':
-        final isOn = (functionCall.args['isOn'] is bool) ? functionCall.args['isOn'] : (functionCall.args['isOn'].toString().toLowerCase() == 'true');
-        toolResponse = await DeviceTools.toggleFlashlight(isOn: isOn);
-        break;
-      case 'get_current_weather':
-        final location = functionCall.args['location'] as String? ?? '';
-        toolResponse = await DeviceTools.getCurrentWeather(location: location);
-        break;
-      default:
-        toolResponse = {'error': 'Unknown function: ${functionCall.name}'};
-    }
-
-    final String formattedResponse = "I have executed the tool '${functionCall.name}' and received the following result: ${jsonEncode(toolResponse)}. Now, provide a user-friendly summary of this result.";
-
-    await _chat.addQueryChunk(Message.text(text: formattedResponse, isUser: true));
-
-    await _getFinalSummary();
-  }
-
-  Future<void> _getFinalSummary() async {
-    final modelResponseHolder = ChatMessage(text: '…', isUser: false);
-    setState(() => messages.add(modelResponseHolder));
-
+    Map<String, dynamic> toolResult;
     try {
-      final responseStream = _chat.generateChatResponseAsync();
-      String fullResponse = '';
-      await for (final tokenResponse in responseStream) {
-        if (tokenResponse is TextResponse) {
-          setState(() {
-            fullResponse += tokenResponse.token;
-            messages.last = ChatMessage(text: fullResponse + '…', isUser: false);
-          });
+      if (call.name == 'get_current_weather') {
+        toolResult = await DeviceTools.getCurrentWeather(location: call.args['location']);
+      } else {
+        toolResult = {'error': 'Unknown tool: ${call.name}'};
+      }
+    } catch (e) {
+      toolResult = {'error': 'App-level exception during tool execution: $e'};
+    }
+
+    final finalResponseStream = GemmaService.sendToolResultAndGetResponse(
+      toolName: call.name,
+      response: toolResult,
+    );
+
+    if (finalResponseStream == null) {
+      setState(() => messageToUpdate.text = 'Error: Could not get final response from AI.');
+      return;
+    }
+
+    String finalResponseText = '';
+    await _responseSubscription?.cancel();
+    _responseSubscription = finalResponseStream.listen(
+          (response) {
+        if (response is TextResponse) {
+          if (finalResponseText.isEmpty) {
+            finalResponseText += response.token;
+            setState(() => messageToUpdate.text = finalResponseText);
+          } else {
+            finalResponseText += response.token;
+            setState(() => messageToUpdate.text = finalResponseText + '…');
+          }
           _scrollToBottom();
         }
-      }
-      setState(() {
-        messages.last = ChatMessage(text: fullResponse, isUser: false);
-        _isModelResponding = false;
-      });
-    } catch (e) {
-      print('[getFinalSummary] CAUGHT ERROR: $e');
-      setState(() {
-        messages.last = ChatMessage(text: 'Sorry, an error occurred after the tool ran.', isUser: false);
-        _isModelResponding = false;
-      });
-    }
-    _scrollToBottom();
+      },
+      onError: (e) {
+        setState(() => messageToUpdate.text = 'An error occurred: $e');
+        setState(() => _isModelResponding = false);
+      },
+      onDone: () async {
+        if (!mounted) return;
+        setState(() => messageToUpdate.text = finalResponseText);
+        await GemmaService.addModelResponseToHistory(finalResponseText);
+        setState(() => _isModelResponding = false);
+        _scrollToBottom();
+      },
+    );
   }
 
   @override
@@ -283,7 +261,37 @@ class _ChatScreenState extends State<ChatScreen> {
                           : Theme.of(context).colorScheme.surfaceVariant,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text(message.text),
+                    child: Column(
+                      crossAxisAlignment: message.isUser
+                          ? CrossAxisAlignment.end
+                          : CrossAxisAlignment.start,
+                      children: [
+                        if (message.imageBytes != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8.0),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(
+                                  maxHeight: 200, maxWidth: 200),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.memory(message.imageBytes!,
+                                    fit: BoxFit.cover),
+                              ),
+                            ),
+                          ),
+                        if (message.text.isNotEmpty)
+                          Text(
+                            message.text,
+                            style: TextStyle(
+                              color: message.isUser
+                                  ? Theme.of(context).colorScheme.onPrimary
+                                  : Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 );
               },
@@ -299,16 +307,20 @@ class _ChatScreenState extends State<ChatScreen> {
                     constraints: const BoxConstraints(maxHeight: 100),
                     child: Stack(
                       children: [
-                        Image.memory(_imageBytes!),
+                        ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.memory(_imageBytes!)),
                         Positioned(
                           top: 0,
                           right: 0,
-                          child: IconButton(
-                            icon: const CircleAvatar(
+                          child: GestureDetector(
+                            onTap: () => setState(() => _imageBytes = null),
+                            child: const CircleAvatar(
+                              radius: 12,
                               backgroundColor: Colors.black54,
-                              child: Icon(Icons.close, color: Colors.white, size: 16),
+                              child: Icon(Icons.close,
+                                  color: Colors.white, size: 16),
                             ),
-                            onPressed: () => setState(() => _imageBytes = null),
                           ),
                         ),
                       ],
@@ -326,10 +338,13 @@ class _ChatScreenState extends State<ChatScreen> {
                         controller: textController,
                         enabled: canSendMessage,
                         decoration: InputDecoration(
-                          hintText: canSendMessage ? 'Ask a question...' : 'AI is responding...',
+                          hintText: canSendMessage
+                              ? 'Ask a question...'
+                              : 'AI is responding...',
                           border: const OutlineInputBorder(),
                         ),
-                        onSubmitted: canSendMessage ? (_) => sendMessage() : null,
+                        onSubmitted:
+                        canSendMessage ? (_) => sendMessage() : null,
                       ),
                     ),
                     IconButton(

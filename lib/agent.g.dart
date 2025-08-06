@@ -20,13 +20,16 @@ class AgentAdapter extends TypeAdapter<Agent> {
       ..name = fields[0] as String
       ..persona = fields[1] as String
       ..toolNames = (fields[2] as List).cast<String>()
-      ..iconName = fields[3] as String;
+      ..iconName = fields[3] as String
+    // --- THIS IS THE FIX ---
+    // It now safely handles old data that might not have a history field.
+      ..history = (fields[4] as List?)?.cast<ChatMessage>().toList() ?? [];
   }
 
   @override
   void write(BinaryWriter writer, Agent obj) {
     writer
-      ..writeByte(4)
+      ..writeByte(5)
       ..writeByte(0)
       ..write(obj.name)
       ..writeByte(1)
@@ -34,7 +37,9 @@ class AgentAdapter extends TypeAdapter<Agent> {
       ..writeByte(2)
       ..write(obj.toolNames)
       ..writeByte(3)
-      ..write(obj.iconName);
+      ..write(obj.iconName)
+      ..writeByte(4)
+      ..write(obj.history);
   }
 
   @override
@@ -43,7 +48,7 @@ class AgentAdapter extends TypeAdapter<Agent> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is AgentAdapter &&
-          runtimeType == other.runtimeType &&
-          typeId == other.typeId;
+          other is AgentAdapter &&
+              runtimeType == other.runtimeType &&
+              typeId == other.typeId;
 }

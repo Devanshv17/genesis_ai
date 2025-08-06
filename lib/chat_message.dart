@@ -1,7 +1,18 @@
-// lib/chat_message.dart
-class ChatMessage {
-  final String text;
-  final bool isUser;
+// lib/models/chat_message.dart
+import 'dart:typed_data';
+import 'package:hive/hive.dart';
 
-  ChatMessage({required this.text, required this.isUser});
+part 'chat_message.g.dart';
+
+@HiveType(typeId: 1)
+class ChatMessage extends HiveObject {
+  @HiveField(0)
+  late String text;
+
+  @HiveField(1)
+  late bool isUser;
+
+  // This should only be here ONCE
+  @HiveField(2)
+  Uint8List? imageBytes;
 }

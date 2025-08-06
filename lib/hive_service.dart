@@ -1,4 +1,6 @@
-import 'package:ai_agent/agent.dart';
+// lib/hive_service.dart
+import 'agent.dart';
+import 'chat_message.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 class HiveService {
@@ -7,6 +9,7 @@ class HiveService {
   static Future<void> initialize() async {
     await Hive.initFlutter();
     Hive.registerAdapter(AgentAdapter());
+    Hive.registerAdapter(ChatMessageAdapter()); // Register the new adapter
     await Hive.openBox<Agent>(agentBoxName);
     print('Hive initialized and agent box opened.');
   }
@@ -26,7 +29,6 @@ class HiveService {
     print('Agent at index $index deleted.');
   }
 
-  // --- NEW FUNCTION TO CLEAR ALL AGENTS ---
   static Future<void> clearAllAgents() async {
     final box = getAgentBox();
     await box.clear();
