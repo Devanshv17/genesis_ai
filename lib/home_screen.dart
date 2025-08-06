@@ -229,7 +229,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My AI Agents'),
+        title: const Text('Genesis AI'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),

@@ -1,6 +1,6 @@
 {
-    "name": "ai_agent",
-    "short_name": "ai_agent",
+    "name": "genesis_ai",
+    "short_name": "genesis_ai",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

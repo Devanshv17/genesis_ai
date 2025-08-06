@@ -75,7 +75,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'AI Agent Creator',
+      title: 'Genesis AI',
       debugShowCheckedModeBanner: false, // Hides the debug banner
       // --- APPLYING THE THEME ---
       theme: lightTheme,

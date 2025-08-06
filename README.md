@@ -1,4 +1,4 @@
-# ai_agent
+# genesis_ai
 
 A new Flutter project.
 

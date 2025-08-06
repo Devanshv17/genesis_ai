@@ -4,10 +4,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:ai_agent/agent.dart';
-import 'package:ai_agent/chat_message.dart';
-import 'package:ai_agent/device_tools.dart';
-import 'package:ai_agent/gemma_service.dart';
+import 'package:genesis_ai/agent.dart';
+import 'package:genesis_ai/chat_message.dart';
+import 'package:genesis_ai/device_tools.dart';
+import 'package:genesis_ai/gemma_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_gemma/core/model.dart';
