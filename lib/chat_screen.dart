@@ -38,22 +38,14 @@ class _ChatScreenState extends State<ChatScreen> {
     Future.microtask(() => initializeChat());
   }
 
-  // --- FIX: The dispose method is now async to handle orderly shutdown ---
   @override
   Future<void> dispose() async {
-    // First, await the cancellation of any active stream subscription.
-    // This gives the native side time to finish its work before we shut down the service.
     await _responseSubscription?.cancel();
-
-    // Now that the stream is safely cancelled, shut down the Gemma service.
     GemmaService.stopChatSession();
-
-    // Perform the rest of the cleanup.
     widget.agent.history = messages;
     widget.agent.save();
     textController.dispose();
     _scrollController.dispose();
-
     super.dispose();
   }
 
@@ -68,7 +60,6 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  // All other methods from here down are unchanged from the last version.
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -131,12 +122,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
     String fullResponse = '';
     FunctionCallResponse? receivedFunctionCall;
+    bool toolCallHandled = false;
 
     _responseSubscription = responseStream.listen(
           (tokenResponse) {
         if (!mounted) return;
 
         if (tokenResponse is FunctionCallResponse) {
+          toolCallHandled = true;
           receivedFunctionCall = tokenResponse;
           final functionName = tokenResponse.name;
           final functionArgs = jsonEncode(tokenResponse.args);
@@ -161,7 +154,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
         if (receivedFunctionCall != null) {
           _executeToolAndGetFinalResponse(receivedFunctionCall!, aiMessage);
-        } else {
+        } else if (!toolCallHandled) {
           setState(() => aiMessage.text = fullResponse);
           await GemmaService.addModelResponseToHistory(fullResponse);
           setState(() => _isModelResponding = false);
@@ -239,15 +232,12 @@ class _ChatScreenState extends State<ChatScreen> {
       padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
       child: Column(
         children: [
-          // Agent Icon
           Icon(
             widget.agent.iconData,
             size: 56,
             color: Theme.of(context).colorScheme.primary,
           ),
           const SizedBox(height: 16),
-
-          // Agent Name
           Text(
             widget.agent.name,
             textAlign: TextAlign.center,
@@ -256,8 +246,6 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
           const SizedBox(height: 8),
-
-          // Agent Persona/Description
           Text(
             widget.agent.persona,
             textAlign: TextAlign.center,
@@ -266,22 +254,167 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
           const SizedBox(height: 24),
-
-          // A subtle divider to separate the header from the chat messages
           const Divider(),
         ],
       ),
     );
   }
 
+  Widget _buildLoadingState() {
+    return Column(
+      children: [
+        _buildHeader(),
+        Expanded(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(
+                  _status,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
+  Widget _buildChatUI() {
+    return ListView.builder(
+      controller: _scrollController,
+      itemCount: messages.length + 1,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return _buildHeader();
+        }
+
+        final messageIndex = index - 1;
+        final message = messages[messageIndex];
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+          child: Align(
+            alignment: message.isUser
+                ? Alignment.centerRight
+                : Alignment.centerLeft,
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 5.0),
+              padding: const EdgeInsets.all(12.0),
+              decoration: BoxDecoration(
+                color: message.isUser
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.surfaceVariant,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                crossAxisAlignment: message.isUser
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
+                children: [
+                  if (message.imageBytes != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8.0),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                            maxHeight: 200, maxWidth: 200),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.memory(message.imageBytes!,
+                              fit: BoxFit.cover),
+                        ),
+                      ),
+                    ),
+                  if (message.text.isNotEmpty)
+                    Text(
+                      message.text,
+                      style: TextStyle(
+                        color: message.isUser
+                            ? Theme.of(context).colorScheme.onPrimary
+                            : Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTextInputBar() {
+    final bool canSendMessage = _isReady && !_isModelResponding;
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Column(
+        children: [
+          if (_imageBytes != null)
+            Container(
+              padding: const EdgeInsets.only(bottom: 8.0),
+              constraints: const BoxConstraints(maxHeight: 100),
+              child: Stack(
+                children: [
+                  ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.memory(_imageBytes!)),
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: GestureDetector(
+                      onTap: () => setState(() => _imageBytes = null),
+                      child: const CircleAvatar(
+                        radius: 12,
+                        backgroundColor: Colors.black54,
+                        child: Icon(Icons.close,
+                            color: Colors.white, size: 16),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.attachment),
+                tooltip: 'Add Image',
+                onPressed: canSendMessage ? _pickImage : null,
+              ),
+              Expanded(
+                child: TextField(
+                  controller: textController,
+                  enabled: canSendMessage,
+                  decoration: InputDecoration(
+                    hintText: canSendMessage
+                        ? 'Ask a question...'
+                        : 'AI is responding...',
+                    border: const OutlineInputBorder(),
+                  ),
+                  onSubmitted:
+                  canSendMessage ? (_) => sendMessage() : null,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.send),
+                onPressed: canSendMessage ? sendMessage : null,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final bool canSendMessage = _isReady && !_isModelResponding;
     return Scaffold(
       appBar: AppBar(
-        // The AppBar is simpler now, just showing the name.
         title: Text(widget.agent.name),
         backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 1,
@@ -289,140 +422,9 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(
-            // We use a ListView.builder for the entire scrollable area.
-            child: ListView.builder(
-              controller: _scrollController,
-              // The item count is the number of messages PLUS ONE for the header.
-              itemCount: messages.length + 1,
-              itemBuilder: (context, index) {
-                // --- The New Layout Logic ---
-
-                // If it's the first item, build the header.
-                if (index == 0) {
-                  // If there are no messages yet, show the status in the header area.
-                  return messages.isEmpty
-                      ? Center(child: Text(_status))
-                      : _buildHeader();
-                }
-
-                // Otherwise, it's a message. We subtract 1 to get the correct message index.
-                final messageIndex = index - 1;
-                final message = messages[messageIndex];
-
-                // This is your EXACT message bubble logic from before, completely unchanged.
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                  child: Align(
-                    alignment: message.isUser
-                        ? Alignment.centerRight
-                        : Alignment.centerLeft,
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(vertical: 5.0),
-                      padding: const EdgeInsets.all(12.0),
-                      decoration: BoxDecoration(
-                        color: message.isUser
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.surfaceVariant,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: message.isUser
-                            ? CrossAxisAlignment.end
-                            : CrossAxisAlignment.start,
-                        children: [
-                          if (message.imageBytes != null)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8.0),
-                              child: ConstrainedBox(
-                                constraints: const BoxConstraints(
-                                    maxHeight: 200, maxWidth: 200),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: Image.memory(message.imageBytes!,
-                                      fit: BoxFit.cover),
-                                ),
-                              ),
-                            ),
-                          if (message.text.isNotEmpty)
-                            Text(
-                              message.text,
-                              style: TextStyle(
-                                color: message.isUser
-                                    ? Theme.of(context).colorScheme.onPrimary
-                                    : Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
+            child: _isReady ? _buildChatUI() : _buildLoadingState(),
           ),
-
-          // Your text input bar logic is completely unchanged.
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Column(
-              children: [
-                if (_imageBytes != null)
-                  Container(
-                    padding: const EdgeInsets.only(bottom: 8.0),
-                    constraints: const BoxConstraints(maxHeight: 100),
-                    child: Stack(
-                      children: [
-                        ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.memory(_imageBytes!)),
-                        Positioned(
-                          top: 0,
-                          right: 0,
-                          child: GestureDetector(
-                            onTap: () => setState(() => _imageBytes = null),
-                            child: const CircleAvatar(
-                              radius: 12,
-                              backgroundColor: Colors.black54,
-                              child: Icon(Icons.close,
-                                  color: Colors.white, size: 16),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.attachment),
-                      tooltip: 'Add Image',
-                      onPressed: canSendMessage ? _pickImage : null,
-                    ),
-                    Expanded(
-                      child: TextField(
-                        controller: textController,
-                        enabled: canSendMessage,
-                        decoration: InputDecoration(
-                          hintText: canSendMessage
-                              ? 'Ask a question...'
-                              : 'AI is responding...',
-                          border: const OutlineInputBorder(),
-                        ),
-                        onSubmitted:
-                        canSendMessage ? (_) => sendMessage() : null,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.send),
-                      onPressed: canSendMessage ? sendMessage : null,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+          _buildTextInputBar(),
         ],
       ),
     );

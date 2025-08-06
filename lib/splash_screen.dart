@@ -1,11 +1,12 @@
 // lib/splash_screen.dart
+
 import 'dart:io';
 import 'downloader_screen.dart';
 import 'gemma_service.dart';
 import 'home_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart'; // Add this import
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // Add this import
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -15,57 +16,87 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  // --- We no longer need a hardcoded size here. ---
+
   @override
   void initState() {
     super.initState();
-    _checkModelAndNavigate();
+    Future.delayed(const Duration(seconds: 2), _checkModelAndNavigate);
   }
 
+  // --- UPDATED: This function now reads the saved size for the check ---
   Future<void> _checkModelAndNavigate() async {
+    // First, load the expected size that was saved after a successful download.
+    final prefs = await SharedPreferences.getInstance();
+    // Default to 0 if the size has never been saved before.
+    final expectedSize = prefs.getInt('expectedModelSize') ?? 0;
+
+    // If no size has ever been saved, we know the model doesn't exist.
+    if (expectedSize == 0) {
+      print('SplashScreen: No saved model size found. Navigating to downloader.');
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const DownloaderScreen()),
+        );
+      }
+      return; // Stop here
+    }
+
     final directory = await getApplicationDocumentsDirectory();
     const modelFilename = 'gemma-3n-E2B-it-int4.task';
     final filePath = '${directory.path}/$modelFilename';
     final file = File(filePath);
 
-    await Future.delayed(const Duration(seconds: 2));
+    bool modelIsValid = false;
 
     if (await file.exists()) {
-      try {
-        print('SplashScreen: Model found. Setting up GemmaService path...');
-        // FIX: Call the renamed method from our previous correction.
-        await GemmaService.setupModelPath();
-        print('SplashScreen: Service path configured. Navigating to HomeScreen.');
+      final fileSize = await file.length();
+      // Compare the actual file size with the dynamically saved expected size.
+      if (fileSize >= expectedSize) {
+        print('SplashScreen: Model found and size is valid ($fileSize bytes).');
+        modelIsValid = true;
+      } else {
+        print('SplashScreen: Model found but is incomplete ($fileSize bytes). Navigating to downloader.');
+        modelIsValid = false;
+      }
+    } else {
+      print('SplashScreen: Model not found. Navigating to downloader.');
+      modelIsValid = false;
+    }
 
+    if (mounted) {
+      if (modelIsValid) {
+        await GemmaService.setupModelPath();
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const HomeScreen()),
         );
-      } catch (e) {
-        // This catch block might now be less likely to trigger,
-        // but it's good for safety.
-        print('SplashScreen: Error during path setup: $e. Navigating to DownloaderScreen.');
+      } else {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const DownloaderScreen()),
         );
       }
-    } else {
-      print('SplashScreen: Model not found, navigating to DownloaderScreen.');
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const DownloaderScreen()),
-      );
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.background,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 20),
-            Text('Checking for AI model...'),
+            Image.asset(
+              'assets/logo.png',
+              width: 120,
+            ),
+            const SizedBox(height: 24),
+            const CircularProgressIndicator(),
+            const SizedBox(height: 20),
+            Text(
+              'Initializing...',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
           ],
         ),
       ),

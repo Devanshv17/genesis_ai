@@ -49,24 +49,10 @@ class _HomeScreenState extends State<HomeScreen> {
       //   ..iconName = 'lightbulb'
       //   ..history = []); // Initialize history
       agentBox.add(Agent()
-        ..name = 'Live Weather Reporter'
-        ..persona = 'You are a function-calling AI assistant. Your ONLY job is to identify and call the correct tool from the provided list. You have the following tools available: `get_current_weather`. When a user asks "what is the weather in Paris?", you MUST respond ONLY with the function call. Example of a correct response format: `get_current_weather(location="Paris")`. You MUST NOT add any prefixes like `print()` or `weather.`. You MUST NOT use markdown `tool_code` blocks. Your entire response must be the raw function call.'
-        ..toolNames = ['get_current_weather']
-        ..iconName = 'cloud'
-        ..history = []); // Initialize history
-      agentBox.add(Agent()
         ..name = 'Mindful Companion'
         ..persona = 'You are a calm, non-judgmental, and empathetic companion. Your purpose is to listen actively to the user\'s thoughts and feelings. Offer supportive and encouraging words. You can suggest simple mindfulness or breathing exercises if appropriate, but you must always include the disclaimer: "I am an AI and not a substitute for a real mental health professional."'
         ..toolNames = []
         ..iconName = 'self_improvement'
-        ..history = []);
-
-      // Accessibility Agent
-      agentBox.add(Agent()
-        ..name = 'Visual Companion'
-        ..persona = 'You are an AI assistant designed to help visually impaired users. When the user provides an image, your only job is to describe what you see with rich, objective detail. Describe objects, people, text, colors, and the overall environment to help the user understand the scene as if they were seeing it themselves.'
-        ..toolNames = []
-        ..iconName = 'visibility'
         ..history = []);
 
       // Education Agent
@@ -85,6 +71,20 @@ class _HomeScreenState extends State<HomeScreen> {
         ..iconName = 'auto_stories'
         ..history = []);
 
+      agentBox.add(Agent()
+        ..name = 'Live Weather Reporter'
+        ..persona = 'You are a function-calling AI assistant. Your ONLY job is to identify and call the correct tool from the provided list. You have the following tools available: `get_current_weather`. When a user asks "what is the weather in Paris?", you MUST respond ONLY with the function call. Example of a correct response format: `get_current_weather(location="Paris")`. You MUST NOT add any prefixes like `print()` or `weather.`. You MUST NOT use markdown `tool_code` blocks. Your entire response must be the raw function call.'
+        ..toolNames = ['get_current_weather']
+        ..iconName = 'cloud'
+        ..history = []); // Initialize history
+
+      agentBox.add(Agent()
+        ..name = 'Visual Companion'
+        ..persona = 'You are an AI assistant designed to help visually impaired users. When the user provides an image, your only job is to describe what you see with rich, objective detail. Describe objects, people, text, colors, and the overall environment to help the user understand the scene as if they were seeing it themselves.'
+        ..toolNames = []
+        ..iconName = 'visibility'
+        ..history = []);
+
       // Everyday Use Agent
       agentBox.add(Agent()
         ..name = 'Kitchen Assistant'
@@ -100,6 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ..toolNames = []
         ..iconName = 'translate'
         ..history = []);
+
     }
   }
 
