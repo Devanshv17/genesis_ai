@@ -29,12 +29,12 @@ class Agent extends HiveObject {
   // Helper to get the actual Tool objects at runtime
   List<gemma.Tool> get tools {
     List<gemma.Tool> toolObjects = [];
-    if (toolNames.contains('toggle_flashlight')) {
-      toolObjects.add(const gemma.Tool(
-          name: 'toggle_flashlight',
-          description: "Turns the device's flashlight on or off.",
-          parameters: { 'type': 'object', 'properties': { 'isOn': {'type': 'boolean', 'description': 'Set to true to turn the flashlight on, false to turn it off.'}}, 'required': ['isOn']}));
-    }
+    // if (toolNames.contains('toggle_flashlight')) {
+    //   toolObjects.add(const gemma.Tool(
+    //       name: 'toggle_flashlight',
+    //       description: "Turns the device's flashlight on or off.",
+    //       parameters: { 'type': 'object', 'properties': { 'isOn': {'type': 'boolean', 'description': 'Set to true to turn the flashlight on, false to turn it off.'}}, 'required': ['isOn']}));
+    // }
     if (toolNames.contains('get_current_weather')) {
       toolObjects.add(const gemma.Tool(
           name: 'get_current_weather',

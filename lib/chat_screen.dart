@@ -38,14 +38,22 @@ class _ChatScreenState extends State<ChatScreen> {
     Future.microtask(() => initializeChat());
   }
 
+  // --- FIX: The dispose method is now async to handle orderly shutdown ---
   @override
-  void dispose() {
-    _responseSubscription?.cancel();
+  Future<void> dispose() async {
+    // First, await the cancellation of any active stream subscription.
+    // This gives the native side time to finish its work before we shut down the service.
+    await _responseSubscription?.cancel();
+
+    // Now that the stream is safely cancelled, shut down the Gemma service.
     GemmaService.stopChatSession();
+
+    // Perform the rest of the cleanup.
     widget.agent.history = messages;
     widget.agent.save();
     textController.dispose();
     _scrollController.dispose();
+
     super.dispose();
   }
 
@@ -60,6 +68,7 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  // All other methods from here down are unchanged from the last version.
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -121,7 +130,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     String fullResponse = '';
-    // --- FIX: This variable will hold the function call if we receive one. ---
     FunctionCallResponse? receivedFunctionCall;
 
     _responseSubscription = responseStream.listen(
@@ -129,9 +137,7 @@ class _ChatScreenState extends State<ChatScreen> {
         if (!mounted) return;
 
         if (tokenResponse is FunctionCallResponse) {
-          // --- FIX: Just save the function call. Don't execute it yet. ---
           receivedFunctionCall = tokenResponse;
-          // You can still update the UI to show that a tool is being considered.
           final functionName = tokenResponse.name;
           final functionArgs = jsonEncode(tokenResponse.args);
           final formattedCall = 'Calling Tool:\n$functionName($functionArgs)';
@@ -153,12 +159,9 @@ class _ChatScreenState extends State<ChatScreen> {
       onDone: () async {
         if (!mounted) return;
 
-        // --- FIX: The stream is done. NOW it's safe to act. ---
         if (receivedFunctionCall != null) {
-          // A tool needs to be called.
           _executeToolAndGetFinalResponse(receivedFunctionCall!, aiMessage);
         } else {
-          // It was a simple text response. Finalize it.
           setState(() => aiMessage.text = fullResponse);
           await GemmaService.addModelResponseToHistory(fullResponse);
           setState(() => _isModelResponding = false);
@@ -169,7 +172,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _executeToolAndGetFinalResponse(FunctionCallResponse call, ChatMessage messageToUpdate) async {
-    // This method is now called at a safe time. Its internal logic remains the same.
     final modelJsonOutput = {
       'name': call.name,
       'parameters': call.args,

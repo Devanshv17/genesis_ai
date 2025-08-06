@@ -3,7 +3,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'agent.dart';
+import 'package:ai_agent/agent.dart';
 import 'package:flutter_gemma/core/model.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:path_provider/path_provider.dart';
@@ -11,31 +11,23 @@ import 'package:path_provider/path_provider.dart';
 class GemmaService {
   static InferenceModel? model;
   static var _activeChat;
-  static StreamSubscription? _responseSubscription;
+  // --- FIX: Removed the redundant subscription variable from the service. ---
+  // The ChatScreen will manage its own subscription lifecycle.
 
-  /// This method should only be called once when the app starts.
-  /// It sets up the model path but doesn't create the model instance.
   static Future<void> setupModelPath() async {
     final modelManager = FlutterGemmaPlugin.instance.modelManager;
     final directory = await getApplicationDocumentsDirectory();
-    // Ensure this model name matches the one you downloaded.
     const modelFilename = 'gemma-3n-E2B-it-int4.task';
     final filePath = '${directory.path}/$modelFilename';
-
-    // This just tells the plugin where to find the model file.
     await modelManager.setModelPath(filePath);
     print('GemmaService: Model file path configured at $filePath');
   }
 
-  /// This now handles the full lifecycle of creating a session for an agent.
   static Future<void> startChatSession(Agent agent) async {
     print("GEMMA_SERVICE: Starting new chat session for '${agent.name}'...");
-    // First, ensure any previous session and model are completely closed.
     await stopChatSession();
 
     try {
-      // Re-create the InferenceModel instance every time.
-      // This ensures a completely fresh start with no leftover state.
       print("GEMMA_SERVICE: Creating new InferenceModel instance.");
       model = await FlutterGemmaPlugin.instance.createModel(
         modelType: ModelType.gemmaIt,
@@ -43,14 +35,12 @@ class GemmaService {
       );
       print('GemmaService: Shared InferenceModel created successfully.');
 
-      // Create a new chat from the fresh model instance.
       _activeChat = await model!.createChat(
         supportImage: true,
         tools: agent.tools,
         supportsFunctionCalls: agent.tools.isNotEmpty,
       );
 
-      // Load persona and history into the new chat session.
       await _activeChat!.addQueryChunk(Message.text(text: agent.persona, isUser: true));
       for (final message in agent.history) {
         if (message.imageBytes != null) {
@@ -79,7 +69,6 @@ class GemmaService {
     return _activeChat!.generateChatResponseAsync();
   }
 
-  /// Sends the result of a tool call back to the model to get a final summary.
   static Stream<dynamic>? sendToolResultAndGetResponse({
     required String toolName,
     required Map<String, dynamic> response,
@@ -89,11 +78,8 @@ class GemmaService {
       return null;
     }
     print("GEMMA_SERVICE: Sending tool result for '$toolName' back to model.");
-    // 1. Send the result of the tool back to the model
     final toolMessage = Message.toolResponse(toolName: toolName, response: response);
     _activeChat!.addQueryChunk(toolMessage);
-
-    // 2. Ask the model to generate a final summary based on the tool result
     return _activeChat!.generateChatResponseAsync();
   }
 
@@ -102,17 +88,12 @@ class GemmaService {
     await _activeChat!.addQueryChunk(Message.text(text: text, isUser: false));
   }
 
-  /// This now properly closes and releases all native resources.
   static Future<void> stopChatSession() async {
     print("GEMMA_SERVICE: Stopping active chat session...");
-    await _responseSubscription?.cancel();
-    _responseSubscription = null;
-    _activeChat = null;
-
-    // Close the InferenceModel to release all native resources.
+    // --- FIX: Removed subscription cancellation from here. ---
     await model?.close();
-    model = null; // Set the static model variable to null.
-
+    model = null;
+    _activeChat = null;
     print("GEMMA_SERVICE: Active chat session and model resources released.");
   }
 }
