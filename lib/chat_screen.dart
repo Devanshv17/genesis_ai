@@ -234,71 +234,136 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
+      child: Column(
+        children: [
+          // Agent Icon
+          Icon(
+            widget.agent.iconData,
+            size: 56,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(height: 16),
+
+          // Agent Name
+          Text(
+            widget.agent.name,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Agent Persona/Description
+          Text(
+            widget.agent.persona,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // A subtle divider to separate the header from the chat messages
+          const Divider(),
+        ],
+      ),
+    );
+  }
+
+
+
   @override
   Widget build(BuildContext context) {
     final bool canSendMessage = _isReady && !_isModelResponding;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.agent.name)),
+      appBar: AppBar(
+        // The AppBar is simpler now, just showing the name.
+        title: Text(widget.agent.name),
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        elevation: 1,
+      ),
       body: Column(
         children: [
           Expanded(
-            child: messages.isEmpty
-                ? Center(child: Text(_status))
-                : ListView.builder(
+            // We use a ListView.builder for the entire scrollable area.
+            child: ListView.builder(
               controller: _scrollController,
-              padding: const EdgeInsets.all(8.0),
-              itemCount: messages.length,
+              // The item count is the number of messages PLUS ONE for the header.
+              itemCount: messages.length + 1,
               itemBuilder: (context, index) {
-                final message = messages[index];
-                return Align(
-                  alignment: message.isUser
-                      ? Alignment.centerRight
-                      : Alignment.centerLeft,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 5.0),
-                    padding: const EdgeInsets.all(12.0),
-                    decoration: BoxDecoration(
-                      color: message.isUser
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.surfaceVariant,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: message.isUser
-                          ? CrossAxisAlignment.end
-                          : CrossAxisAlignment.start,
-                      children: [
-                        if (message.imageBytes != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(
-                                  maxHeight: 200, maxWidth: 200),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: Image.memory(message.imageBytes!,
-                                    fit: BoxFit.cover),
+                // --- The New Layout Logic ---
+
+                // If it's the first item, build the header.
+                if (index == 0) {
+                  // If there are no messages yet, show the status in the header area.
+                  return messages.isEmpty
+                      ? Center(child: Text(_status))
+                      : _buildHeader();
+                }
+
+                // Otherwise, it's a message. We subtract 1 to get the correct message index.
+                final messageIndex = index - 1;
+                final message = messages[messageIndex];
+
+                // This is your EXACT message bubble logic from before, completely unchanged.
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  child: Align(
+                    alignment: message.isUser
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(vertical: 5.0),
+                      padding: const EdgeInsets.all(12.0),
+                      decoration: BoxDecoration(
+                        color: message.isUser
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.surfaceVariant,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: message.isUser
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.start,
+                        children: [
+                          if (message.imageBytes != null)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8.0),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                    maxHeight: 200, maxWidth: 200),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Image.memory(message.imageBytes!,
+                                      fit: BoxFit.cover),
+                                ),
                               ),
                             ),
-                          ),
-                        if (message.text.isNotEmpty)
-                          Text(
-                            message.text,
-                            style: TextStyle(
-                              color: message.isUser
-                                  ? Theme.of(context).colorScheme.onPrimary
-                                  : Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
+                          if (message.text.isNotEmpty)
+                            Text(
+                              message.text,
+                              style: TextStyle(
+                                color: message.isUser
+                                    ? Theme.of(context).colorScheme.onPrimary
+                                    : Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 );
               },
             ),
           ),
+
+          // Your text input bar logic is completely unchanged.
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Column(

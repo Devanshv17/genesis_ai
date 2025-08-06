@@ -222,6 +222,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // lib/home_screen.dart -> inside _HomeScreenState class
+
+  // 1. REPLACE your old `build` method with this new one.
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -235,70 +238,237 @@ class _HomeScreenState extends State<HomeScreen> {
           )
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: ValueListenableBuilder(
-              valueListenable: HiveService.getAgentBox().listenable(),
-              builder: (context, Box<Agent> box, _) {
-                final agents = box.values.toList();
-                return ListView.builder(
-                  itemCount: agents.length,
-                  itemBuilder: (context, index) {
-                    final agent = agents[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
-                      child: ListTile(
-                        leading: Icon(agent.iconData, color: Theme.of(context).colorScheme.primary),
-                        title: Text(agent.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text(agent.persona, maxLines: 2, overflow: TextOverflow.ellipsis),
-                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(builder: (context) => ChatScreen(agent: agent)),
-                          );
-                        },
-                        onLongPress: () {
-                          _showDeleteConfirmation(index, agent);
-                        },
-                      ),
-                    );
-                  },
-                );
-              },
+      body: ValueListenableBuilder(
+        valueListenable: HiveService.getAgentBox().listenable(),
+        builder: (context, Box<Agent> box, _) {
+          final agents = box.values.toList();
+          return GridView.builder(
+            padding: const EdgeInsets.all(12.0),
+            // The grid delegate defines the layout of the grid.
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2, // Two tiles per row
+              crossAxisSpacing: 12.0, // Spacing between columns
+              mainAxisSpacing: 12.0,  // Spacing between rows
+              childAspectRatio: 0.85, // Aspect ratio of the tiles (width / height)
             ),
-          ),
-          Material(
-            elevation: 8.0,
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: textController,
+            // The item count is the number of agents + 1 for our "Add" tile.
+            itemCount: agents.length + 1,
+            itemBuilder: (context, index) {
+              // The first item (index 0) is always the "Add Agent" tile.
+              if (index == 0) {
+                return _AddAgentGridTile(
+                  onTap: () => _showCreateAgentDialog(),
+                );
+              }
+              // For all other items, we display an agent tile.
+              // We subtract 1 from the index to get the correct agent from the list.
+              final agentIndex = index - 1;
+              final agent = agents[agentIndex];
+              return _AgentGridTile(
+                agent: agent,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => ChatScreen(agent: agent),
+                    ),
+                  );
+                },
+                onLongPress: () {
+                  _showDeleteConfirmation(agentIndex, agent);
+                },
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  // 2. ADD this new function inside your _HomeScreenState class.
+  // This function shows a dialog for creating a new agent.
+  // In lib/home_screen.dart, replace the existing _showCreateAgentDialog function
+
+  void _showCreateAgentDialog() {
+    final dialogTextController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              // Softer, more modern rounded corners for the dialog
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16.0),
+              ),
+              // We use SingleChildScrollView to prevent layout issues when the keyboard appears.
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min, // Takes up minimum vertical space
+                  children: [
+                    // 1. Engaging Icon
+                    Icon(
+                      Icons.auto_awesome_rounded,
+                      size: 48,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 2. Clear Title
+                    Text(
+                      'Create a New Agent',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    const SizedBox(height: 8),
+
+                    // 3. Helpful Description
+                    Text(
+                      'Describe the agent you want to create in a few words. Our AI will craft the perfect persona for it.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 24),
+
+                    // 4. Larger, Multi-line Text Field
+                    TextField(
+                      controller: dialogTextController,
+                      autofocus: true,
+                      keyboardType: TextInputType.multiline,
+                      maxLines: 3, // Allows for more text input
                       decoration: const InputDecoration(
-                        hintText: 'Create an agent, e.g., "a travel planner"',
+                        hintText: 'e.g., "a travel planner" or "a motivational fitness coach"',
                         border: OutlineInputBorder(),
                       ),
-                      onSubmitted: (value) => createAgent(),
                     ),
-                  ),
-                  isCreating
-                      ? const Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: CircularProgressIndicator(),
-                  )
-                      : IconButton(
-                    icon: const Icon(Icons.add_circle, size: 30),
-                    onPressed: createAgent,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+              actionsAlignment: MainAxisAlignment.center, // Center the buttons
+              actions: <Widget>[
+                // We keep the button logic the same, but it will now look better
+                // within our improved dialog layout.
+                TextButton(
+                  child: const Text('Cancel'),
+                  onPressed: isCreating ? null : () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 8),
+                isCreating
+                    ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16.0),
+                  child: CircularProgressIndicator(),
+                )
+                    : FilledButton.icon(
+                  icon: const Icon(Icons.add),
+                  label: const Text('Create'),
+                  onPressed: () async {
+                    if (dialogTextController.text.isEmpty) return;
+
+                    textController.text = dialogTextController.text;
+
+                    setDialogState(() => isCreating = true);
+                    await createAgent();
+
+                    // Check if the widget is still in the tree before updating state
+                    if (mounted) {
+                      setDialogState(() => isCreating = false);
+                      // Close the dialog if agent was created successfully
+                      if (textController.text.isEmpty) {
+                        Navigator.of(context).pop();
+                      }
+                    }
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // 3. ADD these two new private widgets for the tiles.
+  // You can place them at the bottom of the _HomeScreenState class.
+
+  /// A widget for displaying a single agent in the grid.
+  Widget _AgentGridTile({
+    required Agent agent,
+    required VoidCallback onTap,
+    required VoidCallback onLongPress,
+  }) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Column(
+            // --- CHANGES ARE HERE ---
+            crossAxisAlignment: CrossAxisAlignment.center, // <-- Centers all content horizontally
+            children: [
+              // Icon
+              Icon(agent.iconData,
+                  size: 48, // <-- Increased icon size
+                  color: Theme.of(context).colorScheme.primary),
+              const Spacer(),
+              // Name
+              Text(
+                agent.name,
+                textAlign: TextAlign.center, // <-- Aligns text to the center
+                style: Theme.of(context).textTheme.titleLarge?.copyWith( // <-- Slightly larger font
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              // Persona
+              Text(
+                agent.persona,
+                textAlign: TextAlign.center, // <-- Aligns text to the center
+                style: Theme.of(context).textTheme.bodyMedium, // <-- Slightly larger font
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
-        ],
+        ),
+      ),
+    );
+  }
+
+  /// A special tile for adding a new agent.
+  Widget _AddAgentGridTile({required VoidCallback onTap}) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      // Dotted border effect can be achieved using a custom painter or a package,
+      // but for simplicity, we'll use a standard card.
+      shape: RoundedRectangleBorder(
+        side: BorderSide(
+          color: Theme.of(context).colorScheme.outline,
+          width: 1,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      elevation: 0,
+      child: InkWell(
+        onTap: onTap,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.add_circle_outline_rounded,
+                  size: 48, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(height: 12),
+              Text(
+                'Create New Agent',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
