@@ -5,7 +5,7 @@ import 'chat_screen.dart';
 import 'hive_service.dart';
 import 'icon_service.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'env.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_gemma/flutter_gemma.dart' as gemma;
 import 'package:hive_flutter/hive_flutter.dart';
@@ -109,7 +109,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => isCreating = true);
 
     final userPrompt = textController.text;
-    final apiKey = dotenv.env['GEMINI_API_KEY'];
+    final apiKey = Env.geminiApiKey;
     String errorMessage = 'Failed to create agent. Please check your API key.';
 
     if (apiKey == null) {

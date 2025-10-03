@@ -3,12 +3,10 @@
 import 'hive_service.dart';
 import 'splash_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 Future<void> main() async {
   // Your existing setup is correct and remains the same.
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env");
   await HiveService.initialize();
   runApp(const MyApp());
 }
@@ -33,9 +31,9 @@ final ThemeData lightTheme = ThemeData(
     backgroundColor: slateBlue,
     foregroundColor: Colors.white, // White title text on the app bar
   ),
-  cardTheme: CardTheme(
+  cardTheme: CardThemeData(
     elevation: 2,
-    surfaceTintColor: Colors.white, // Prevents cards from tinting on scroll
+    surfaceTintColor: Colors.white,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
   ),
   filledButtonTheme: FilledButtonThemeData(
@@ -56,7 +54,7 @@ final ThemeData darkTheme = ThemeData(
   appBarTheme: const AppBarTheme(
     backgroundColor: Colors.black,
   ),
-  cardTheme: CardTheme(
+  cardTheme: CardThemeData(
     elevation: 2,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
   ),

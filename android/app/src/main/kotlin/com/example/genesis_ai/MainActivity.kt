@@ -1,4 +1,4 @@
-package com.example.genesis_ai
+package com.devansh.genesis_ai
 
 import io.flutter.embedding.android.FlutterActivity
 

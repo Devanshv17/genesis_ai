@@ -21,9 +21,7 @@ class AgentAdapter extends TypeAdapter<Agent> {
       ..persona = fields[1] as String
       ..toolNames = (fields[2] as List).cast<String>()
       ..iconName = fields[3] as String
-    // --- THIS IS THE FIX ---
-    // It now safely handles old data that might not have a history field.
-      ..history = (fields[4] as List?)?.cast<ChatMessage>().toList() ?? [];
+      ..history = (fields[4] as List).cast<ChatMessage>();
   }
 
   @override
@@ -48,7 +46,7 @@ class AgentAdapter extends TypeAdapter<Agent> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is AgentAdapter &&
-              runtimeType == other.runtimeType &&
-              typeId == other.typeId;
+      other is AgentAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
 }

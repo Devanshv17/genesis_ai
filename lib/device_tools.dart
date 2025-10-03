@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'env.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:torch_light/torch_light.dart';
@@ -30,7 +30,7 @@ class DeviceTools {
 
   // The new weather function, now correctly placed inside the class
   static Future<Map<String, dynamic>> getCurrentWeather({required String location}) async {
-    final apiKey = dotenv.env['WEATHER_API_KEY'];
+    final apiKey = Env.weatherApiKey;
     if (apiKey == null || apiKey.isEmpty) {
       print('ERROR: WEATHER_API_KEY not found in .env file.');
       return {'error': 'API Key for weather service is not configured.'};

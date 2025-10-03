@@ -1,4 +1,3 @@
-// lib/downloader_screen.dart
 
 // lib/downloader_screen.dart
 
@@ -6,7 +5,7 @@ import 'dart:io';
 import 'home_screen.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'env.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // Add this import
@@ -95,7 +94,7 @@ class _DownloaderScreenState extends State<DownloaderScreen> {
   }
 
   Future<void> downloadModel() async {
-    final hfToken = dotenv.env['HF_TOKEN'] ?? '';
+    final hfToken = Env.hfToken;
     if (hfToken.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Hugging Face token not found in .env file!'),
