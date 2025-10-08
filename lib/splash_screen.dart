@@ -1,12 +1,11 @@
-// lib/splash_screen.dart
-
 import 'dart:io';
-import 'downloader_screen.dart';
-import 'gemma_service.dart';
-import 'home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // Add this import
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'downloader_screen.dart';
+import 'home_screen.dart';
+import 'llm_service.dart'; // Import the new abstract service
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -16,34 +15,39 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  // --- We no longer need a hardcoded size here. ---
+  // Get the correct LLM service implementation based on the current platform.
+  final LlmService _llmService = getLlmService();
 
   @override
   void initState() {
     super.initState();
+    // After a brief delay, check for the model and navigate.
     Future.delayed(const Duration(seconds: 2), _checkModelAndNavigate);
   }
 
-  // --- UPDATED: This function now reads the saved size for the check ---
+  /// Checks if the platform-specific model file exists and is valid,
+  /// then navigates to either the HomeScreen or DownloaderScreen.
   Future<void> _checkModelAndNavigate() async {
-    // First, load the expected size that was saved after a successful download.
     final prefs = await SharedPreferences.getInstance();
-    // Default to 0 if the size has never been saved before.
-    final expectedSize = prefs.getInt('expectedModelSize') ?? 0;
+    // Use a platform-specific key to store the model size.
+    // This allows different models for different platforms to coexist if needed.
+    final expectedSize =
+        prefs.getInt('expectedModelSize_${Platform.operatingSystem}') ?? 0;
 
-    // If no size has ever been saved, we know the model doesn't exist.
+    // If no size has ever been saved for this platform, go to downloader.
     if (expectedSize == 0) {
-      print('SplashScreen: No saved model size found. Navigating to downloader.');
+      print('SplashScreen: No saved model size found for ${Platform.operatingSystem}. Navigating to downloader.');
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const DownloaderScreen()),
         );
       }
-      return; // Stop here
+      return;
     }
 
     final directory = await getApplicationDocumentsDirectory();
-    const modelFilename = 'gemma-3n-E2B-it-int4.task';
+    // Get the model filename dynamically from the service.
+    final modelFilename = _llmService.getModelName();
     final filePath = '${directory.path}/$modelFilename';
     final file = File(filePath);
 
@@ -51,22 +55,23 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (await file.exists()) {
       final fileSize = await file.length();
-      // Compare the actual file size with the dynamically saved expected size.
+      // Compare the actual file size with the saved expected size.
       if (fileSize >= expectedSize) {
-        print('SplashScreen: Model found and size is valid ($fileSize bytes).');
+        print(
+            'SplashScreen: Model found for ${Platform.operatingSystem} and size is valid ($fileSize bytes).');
         modelIsValid = true;
       } else {
-        print('SplashScreen: Model found but is incomplete ($fileSize bytes). Navigating to downloader.');
-        modelIsValid = false;
+        print(
+            'SplashScreen: Model found but is incomplete ($fileSize bytes). Navigating to downloader.');
       }
     } else {
       print('SplashScreen: Model not found. Navigating to downloader.');
-      modelIsValid = false;
     }
 
     if (mounted) {
       if (modelIsValid) {
-        await GemmaService.setupModelPath();
+        // Initialize the appropriate service before moving to the home screen.
+        await _llmService.initialize();
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const HomeScreen()),
         );
@@ -94,7 +99,7 @@ class _SplashScreenState extends State<SplashScreen> {
             const CircularProgressIndicator(),
             const SizedBox(height: 20),
             Text(
-              'Initializing...',
+              'Initializing Genesis AI...',
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ],

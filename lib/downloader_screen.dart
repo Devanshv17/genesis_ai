@@ -1,14 +1,11 @@
-
-// lib/downloader_screen.dart
-
 import 'dart:io';
 import 'home_screen.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'env.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // Add this import
+import 'package:shared_preferences/shared_preferences.dart';
+import 'llm_service.dart';
 
 class DownloaderScreen extends StatefulWidget {
   const DownloaderScreen({super.key});
@@ -24,18 +21,17 @@ class _DownloaderScreenState extends State<DownloaderScreen> {
   String statusText = 'Checking model status...';
   final Dio _dio = Dio();
   CancelToken _cancelToken = CancelToken();
+  final LlmService _llmService = getLlmService();
 
-  // We no longer need a hardcoded size here.
   int _totalBytes = 0;
-
-  final modelManager = FlutterGemmaPlugin.instance.modelManager;
-  static const modelFilename = 'gemma-3n-E2B-it-int4.task';
-  static const modelUrl =
-      'https://huggingface.co/google/gemma-3n-E2B-it-litert-preview/resolve/main/$modelFilename?download=true';
+  late final String modelFilename;
+  late final String modelUrl;
 
   @override
   void initState() {
     super.initState();
+    modelFilename = _llmService.getModelName();
+    modelUrl = _llmService.getModelDownloadUrl();
     checkIfModelExists();
   }
 
@@ -60,10 +56,12 @@ class _DownloaderScreenState extends State<DownloaderScreen> {
     final file = File(filePath);
     if (await file.exists()) {
       await file.delete();
+      print("Model file deleted.");
     }
-    // --- NEW: Also delete the saved model size preference ---
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('expectedModelSize');
+    // Use a platform-specific key for the model size
+    await prefs.remove('expectedModelSize_${Platform.operatingSystem}');
+
     setState(() {
       isModelReady = false;
       downloadProgress = 0;
@@ -71,10 +69,9 @@ class _DownloaderScreenState extends State<DownloaderScreen> {
     });
   }
 
-  // This check is now mostly for the UI of this screen, the main check is on the splash screen.
   Future<void> checkIfModelExists() async {
     final prefs = await SharedPreferences.getInstance();
-    final expectedSize = prefs.getInt('expectedModelSize') ?? 0;
+    final expectedSize = prefs.getInt('expectedModelSize_${Platform.operatingSystem}') ?? 0;
     final filePath = await getModelPath();
     final file = File(filePath);
 
@@ -118,17 +115,15 @@ class _DownloaderScreenState extends State<DownloaderScreen> {
     });
 
     try {
-      await _dio.download(
+      final response = await _dio.get(
         modelUrl,
-        tempPath,
         cancelToken: _cancelToken,
         onReceiveProgress: (received, total) {
           if (total != -1) {
-            // --- NEW: Learn the total size from the download itself ---
-            // The total reported by dio is the *full* size of the file.
             _totalBytes = total;
             setState(() {
-              downloadProgress = received / total;
+              // We add the already downloaded bytes to the current received bytes
+              downloadProgress = (received + receivedBytes) / (total + receivedBytes);
               statusText = 'Downloading... ${(downloadProgress * 100).toStringAsFixed(0)}%';
             });
           }
@@ -138,20 +133,28 @@ class _DownloaderScreenState extends State<DownloaderScreen> {
             'Authorization': 'Bearer $hfToken',
             'Range': 'bytes=$receivedBytes-',
           },
+          responseType: ResponseType.stream, // Important for large files
         ),
-        deleteOnError: false,
       );
+
+      final raf = tempFile.openSync(mode: FileMode.append);
+      await for (final chunk in response.data.stream) {
+        raf.writeFromSync(chunk);
+      }
+      await raf.close();
 
       await tempFile.rename(savePath);
 
-      // --- NEW: Save the learned size for future app launches ---
       if (_totalBytes > 0) {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('expectedModelSize', _totalBytes);
-        print('SUCCESS: Saved expected model size: $_totalBytes bytes');
+        // Use a platform-specific key for saving the model size
+        await prefs.setInt('expectedModelSize_${Platform.operatingSystem}', receivedBytes + _totalBytes);
+        print('SUCCESS: Saved expected model size: ${receivedBytes + _totalBytes} bytes');
       }
 
-      await modelManager.setModelPath(savePath);
+      // --- REMOVED THE ERRONEOUS LINE HERE ---
+      // No need to set model path, the service will handle it on next launch.
+
       setState(() {
         isModelReady = true;
         isLoading = false;
@@ -182,7 +185,6 @@ class _DownloaderScreenState extends State<DownloaderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // The build method remains the same as the last version.
     return Scaffold(
       appBar: AppBar(
         title: const Text('Genesis AI Setup'),
@@ -222,6 +224,12 @@ class _DownloaderScreenState extends State<DownloaderScreen> {
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
+              const SizedBox(height: 8),
+              Text(
+                'Model for ${Platform.operatingSystem.toUpperCase()}:\n$modelFilename',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
               if (isLoading)
                 Padding(
                   padding: const EdgeInsets.only(top: 16.0, left: 16, right: 16),
@@ -241,7 +249,9 @@ class _DownloaderScreenState extends State<DownloaderScreen> {
                   onPressed: isLoading
                       ? () => _cancelToken.cancel("User cancelled")
                       : downloadModel,
-                  icon: Icon(isLoading ? Icons.pause_circle_filled : Icons.download_rounded),
+                  icon: Icon(isLoading
+                      ? Icons.pause_circle_filled
+                      : Icons.download_rounded),
                   label: Text(isLoading
                       ? 'Pause Download'
                       : statusText.contains('paused')
@@ -251,9 +261,13 @@ class _DownloaderScreenState extends State<DownloaderScreen> {
               if (isModelReady)
                 ElevatedButton(
                   onPressed: () {
-                    Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(builder: (context) => const HomeScreen()),
-                    );
+                    // Initialize the service before navigating away
+                    _llmService.initialize().then((_) {
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(
+                            builder: (context) => const HomeScreen()),
+                      );
+                    });
                   },
                   child: const Text('Start Genesis AI'),
                 )

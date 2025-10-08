@@ -536,6 +536,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.1.1"
+  llama_sdk:
+    dependency: "direct main"
+    description:
+      name: llama_sdk
+      sha256: "23fcec0a0992497869728d54f14138a852ebcd4f6bda3abd4fe900b0d1b44e23"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.5"
   logging:
     dependency: transitive
     description:

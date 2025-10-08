@@ -1,17 +1,18 @@
-// lib/chat_screen.dart
-
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:genesis_ai/agent.dart';
-import 'package:genesis_ai/chat_message.dart';
-import 'package:genesis_ai/device_tools.dart';
-import 'package:genesis_ai/gemma_service.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma/core/model.dart';
+import 'package:flutter_gemma/flutter_gemma.dart'; // Still needed for specific response types
 import 'package:image_picker/image_picker.dart';
+
+import 'agent.dart';
+import 'chat_message.dart';
+import 'device_tools.dart';
+import 'gemma_service.dart'; // Keep for type-checking, but not direct calls
+import 'llama_sdk_service.dart';
+import 'llm_service.dart'; // Import our new hybrid service
 
 class ChatScreen extends StatefulWidget {
   final Agent agent;
@@ -22,6 +23,10 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  // --- Start of Changes ---
+  final LlmService _llmService = getLlmService(); // Get the platform-specific service
+  // --- End of Changes ---
+
   StreamSubscription? _responseSubscription;
   String _status = 'Initializing...';
   bool _isReady = false;
@@ -41,7 +46,8 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Future<void> dispose() async {
     await _responseSubscription?.cancel();
-    GemmaService.stopChatSession();
+    // --- Use the abstract service to stop the session ---
+    _llmService.stopChatSession();
     widget.agent.history = messages;
     widget.agent.save();
     textController.dispose();
@@ -52,7 +58,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> initializeChat() async {
     if (!mounted) return;
     setState(() => _status = 'Preparing AI session...');
-    await GemmaService.startChatSession(widget.agent);
+    // --- Use the abstract service to start the session ---
+    await _llmService.startChatSession(widget.agent);
     if (!mounted) return;
     setState(() {
       _isReady = true;
@@ -71,6 +78,12 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _pickImage() async {
+    // No changes needed here, but be aware llama_sdk will ignore the image
+    if (Platform.isMacOS || Platform.isWindows) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Image input is not supported on desktop.")),
+      );
+    }
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(
         source: ImageSource.gallery, imageQuality: 70, maxHeight: 1024);
@@ -110,7 +123,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!mounted) return;
     setState(() => messages.add(aiMessage));
 
-    final responseStream = GemmaService.generateResponse(userMessageText, imageBytes);
+    // --- Use the abstract service to get the response stream ---
+    final responseStream = _llmService.generateResponse(userMessageText, imageBytes);
 
     if (responseStream == null) {
       setState(() {
@@ -128,6 +142,7 @@ class _ChatScreenState extends State<ChatScreen> {
           (tokenResponse) {
         if (!mounted) return;
 
+        // --- Handle different response types from each service ---
         if (tokenResponse is FunctionCallResponse) {
           toolCallHandled = true;
           receivedFunctionCall = tokenResponse;
@@ -135,28 +150,36 @@ class _ChatScreenState extends State<ChatScreen> {
           final functionArgs = jsonEncode(tokenResponse.args);
           final formattedCall = 'Calling Tool:\n$functionName($functionArgs)';
           setState(() => aiMessage.text = formattedCall);
-
-        } else if (tokenResponse is TextResponse) {
+        } else if (tokenResponse is TextResponse) { // From flutter_gemma
           fullResponse += tokenResponse.token;
           setState(() => aiMessage.text = fullResponse + '…');
-          _scrollToBottom();
+        } else if (tokenResponse is String) { // From llama_sdk
+          fullResponse += tokenResponse;
+          setState(() => aiMessage.text = fullResponse + '…');
         }
+        _scrollToBottom();
       },
       onError: (e) {
         if (!mounted) return;
         setState(() {
-          aiMessage.text = 'Sorry, an error occurred.';
+          aiMessage.text = 'Sorry, an error occurred: $e';
           _isModelResponding = false;
         });
       },
       onDone: () async {
         if (!mounted) return;
 
-        if (receivedFunctionCall != null) {
+        // Tool calling is only supported by GemmaService right now
+        if (receivedFunctionCall != null && _llmService is GemmaService) {
           _executeToolAndGetFinalResponse(receivedFunctionCall!, aiMessage);
-        } else if (!toolCallHandled) {
+        } else {
           setState(() => aiMessage.text = fullResponse);
-          await GemmaService.addModelResponseToHistory(fullResponse);
+          // Add the response to the service's internal history if needed
+          if (_llmService is GemmaService) {
+            await (_llmService as GemmaService).addModelResponseToHistory(fullResponse);
+          } else if (_llmService is LlamaSdkService) {
+            await (_llmService as LlamaSdkService).addModelResponseToHistory(fullResponse);
+          }
           setState(() => _isModelResponding = false);
           _scrollToBottom();
         }
@@ -164,12 +187,16 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Future<void> _executeToolAndGetFinalResponse(FunctionCallResponse call, ChatMessage messageToUpdate) async {
+  Future<void> _executeToolAndGetFinalResponse(
+      FunctionCallResponse call, ChatMessage messageToUpdate) async {
+    // This function will now only be called if the service is GemmaService
+    final gemmaService = _llmService as GemmaService;
+
     final modelJsonOutput = {
       'name': call.name,
       'parameters': call.args,
     };
-    await GemmaService.addModelResponseToHistory(jsonEncode(modelJsonOutput));
+    await gemmaService.addModelResponseToHistory(jsonEncode(modelJsonOutput));
 
     await Future.delayed(const Duration(milliseconds: 1200));
     if (!mounted) return;
@@ -188,7 +215,7 @@ class _ChatScreenState extends State<ChatScreen> {
       toolResult = {'error': 'App-level exception during tool execution: $e'};
     }
 
-    final finalResponseStream = GemmaService.sendToolResultAndGetResponse(
+    final finalResponseStream = gemmaService.sendToolResultAndGetResponse(
       toolName: call.name,
       response: toolResult,
     );
@@ -203,24 +230,21 @@ class _ChatScreenState extends State<ChatScreen> {
     _responseSubscription = finalResponseStream.listen(
           (response) {
         if (response is TextResponse) {
-          if (finalResponseText.isEmpty) {
-            finalResponseText += response.token;
-            setState(() => messageToUpdate.text = finalResponseText);
-          } else {
-            finalResponseText += response.token;
-            setState(() => messageToUpdate.text = finalResponseText + '…');
-          }
+          finalResponseText += response.token;
+          setState(() => messageToUpdate.text = finalResponseText + '…');
           _scrollToBottom();
         }
       },
       onError: (e) {
-        setState(() => messageToUpdate.text = 'An error occurred: $e');
-        setState(() => _isModelResponding = false);
+        setState(() {
+          messageToUpdate.text = 'An error occurred: $e';
+          _isModelResponding = false;
+        });
       },
       onDone: () async {
         if (!mounted) return;
         setState(() => messageToUpdate.text = finalResponseText);
-        await GemmaService.addModelResponseToHistory(finalResponseText);
+        await gemmaService.addModelResponseToHistory(finalResponseText);
         setState(() => _isModelResponding = false);
         _scrollToBottom();
       },
